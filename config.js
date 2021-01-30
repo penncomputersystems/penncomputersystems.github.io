@@ -26,14 +26,14 @@ module.exports = {
   ],
   author: {
     name: 'Penn Computer Systems',
-    photo: '/photo.png',
+    photo: '/photo.jpg',
     bio: 'Pellentesque odio nisi, euismod in, pharetra a, ultricies in, diam. Sed arcu.',
     contacts: {
       email: 'penncomputersystems@gmail.com',
       facebook: '',
       telegram: '',
       twitter: '',
-      github: 'github.com/penncomputersystems',
+      github: '/penncomputersystems',
       rss: '',
       vkontakte: '',
       linkedin: '',
