@@ -33,7 +33,7 @@ module.exports = {
       facebook: '',
       telegram: '',
       twitter: '',
-      github: '/penncomputersystems',
+      github: 'penncomputersystems',
       rss: '',
       vkontakte: '',
       linkedin: '',
