@@ -1,10 +1,10 @@
 // @flow strict
-import React from "react";
-import { graphql } from "gatsby";
-import Layout from "../components/Layout";
-import Post from "../components/Post";
-import { useSiteMetadata } from "../hooks";
-import type { MarkdownRemark } from "../types";
+import React from 'react';
+import { graphql } from 'gatsby';
+import Layout from '../components/Layout';
+import Post from '../components/Post';
+import { useSiteMetadata } from '../hooks';
+import type { MarkdownRemark } from '../types';
 
 type Props = {
   data: {
@@ -17,7 +17,7 @@ const PostTemplate = ({ data }: Props) => {
   const { frontmatter } = data.markdownRemark;
   const {
     title: postTitle,
-    description: postDescription = "",
+    description: postDescription = '',
     socialImage
   } = frontmatter;
   const metaDescription = postDescription || siteSubtitle;
