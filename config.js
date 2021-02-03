@@ -4,7 +4,7 @@ module.exports = {
   url: 'https://penncomputersystems.github.io',
   pathPrefix: '/',
   title: 'Blog by Penn Computer Systems',
-  subtitle: 'Pellentesque odio nisi, euismod in, pharetra a, ultricies in, diam. Sed arcu.',
+  subtitle: 'Penn Computer Systmes Blog',
   copyright: '© All rights reserved.',
   disqusShortname: '',
   postsPerPage: 4,
@@ -27,7 +27,7 @@ module.exports = {
   author: {
     name: 'Penn Computer Systems',
     photo: '/photo.jpg',
-    bio: 'Pellentesque odio nisi, euismod in, pharetra a, ultricies in, diam. Sed arcu.',
+    bio: 'Welcome to the Penn Computer Systems Blog',
     contacts: {
       email: 'penncomputersystems@gmail.com',
       facebook: '',
