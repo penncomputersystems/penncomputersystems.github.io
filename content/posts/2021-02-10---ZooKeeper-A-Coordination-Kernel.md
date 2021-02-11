@@ -12,7 +12,7 @@ description:
   "ZooKeeper is a coordination kernel that provides a simple API along with powerful guarantees
   that provides clients an easy way to build concurrency primitives for coordinating
   large-scale distributed processes."
-socialImage: "/media/raft.jpg"
+socialImage: "/media/zookeeper.png"
 ---
 
 A key challenge commonly faced in distributed systems design has to do with
