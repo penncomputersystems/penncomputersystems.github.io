@@ -290,7 +290,7 @@ Yelp, Reddit, Facebook, Twitter etc. Its simple interface, reasonable
 consistency guarantees, and flexible abstractions provides the user with the
 ability to tailor specific primitives that fit the requirements of a particular system.
 
-_P.S._: Personally, I first heard about ZooKeeper from an interesting
+_P.S._ Personally, I first heard about ZooKeeper from an interesting
 [Youtube video](https://www.youtube.com/watch?v=mMuk8Rn9HBg) from one of my favorite programming channels
 on building an asynchronous ZooKeeper client in Rust, which is in
 my opinion a great way to get hands-on experience with interacting with ZooKeeper!
