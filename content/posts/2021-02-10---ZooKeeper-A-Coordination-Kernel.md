@@ -8,7 +8,10 @@ category: "Distributed Systems"
 author: "Yingxuan Eng"
 tags:
   - "Distributed Systems"
-description: ""
+description:
+  "ZooKeeper is a coordination kernel that provides a simple API along with powerful guarantees
+  that provides clients an easy way to build concurrency primitives for coordinating
+  large-scale distributed processes."
 socialImage: "/media/raft.jpg"
 ---
 
