@@ -234,8 +234,63 @@ for real-world throughputs.
 
 ## Replicated Databases
 
+As discussed, a ZooKeeper service is usually composed of multiple servers
+working as an ensemble. This allows ZooKeeper to provide high availability
+by replicating the data nodes on each server. In order to maintain consistency
+between servers, ZooKeeper opts for a common strategy for horizontal scaling,
+namely leader replication. More specifically, a server is selected as the
+_leader_ and the other servers are _followers_. Further, writes are always
+routed through the reader and commits when there is a quorum. Note
+that reads on the other hand can be served by a local replica which may be
+out-of-date and stale (which is why ZooKeeper does not support linearizable reads),
+but this allows for higher read throughput.
+
 ## Zab: An Atomic Broadcast Protocol
+
+ZooKeeper makes use of _Zab_, an atomic broadcast protocol to provide
+the strong guarantees as described previously. At a high level, Zab
+makes use of a majority quorum to commit a proposal to a state change,
+and guarantees that changes are delivered in order that they were sent
+and are atomic. ZooKeeper also makes use of _Zab_ for fault tolerance,
+and uses the protocol to deliver "catch-up" messages since the last
+snapshot in the event of a server failure.
+
+An important point about Zab is that each state change is recorded
+in an _idempotent_ transaction. In other words, applying a particular
+transaction multiple times will not affect the final state of the system.
+Note that this often requires the leader to execute client requests locally
+before proposing a change. For instance, an operation to increment the value
+of the data node at `path` has to be converted to setting the value of the
+data node to some value to preserve idempotency.
+
+For more details and theoretical proofs of correctness of _Zab_, check out
+the paper [here](https://marcoserafini.github.io/papers/zab.pdf).
 
 ## Fuzzy Snapshots
 
+Since the data nodes are stored in-memory, each replica has to take snapshots
+periodically as replaying all transactions from the leader would potentially
+be too time consuming. Recall that ZooKeeper is _wait-free_, so the snapshots
+are _fuzzy snapshots_, since the implementation does not take a lock on the
+state of a particular replica. Interestingly, a resulting snapshot may not correspond
+to the state of ZooKeeper at any point in time (can you think of a series of
+transactions and snapshot procedure that results in this behavior?). But,
+since transactions are idempotent, a replica can easily apply them as long as
+the transactions are stored in the correct order.
+
 # Summary
+
+ZooKeeper was initially developed at Yahoo! and used for a variety of Yahoo!
+services such as the search engine crawler and their distributed pub-sub system,
+but has seen many more use cases ever since. For instance, the Apache Software
+Foundation has developed [Apache ZooKeeper](https://zookeeper.apache.org/)
+as an open-source version of ZooKeeper and is widely used for many production
+applications including Apache Hadoop and Kafka as well as companies including
+Yelp, Reddit, Facebook, Twitter etc. Its simple interface, reasonable
+consistency guarantees, and flexible abstractions provides the user with the
+ability to tailor specific primitives that fit the requirements of a particular system.
+
+_P.S._: Personally, I first heard about ZooKeeper from an interesting
+[Youtube video](https://www.youtube.com/watch?v=mMuk8Rn9HBg) from one of my favorite programming channels
+on building an asynchronous ZooKeeper client in Rust, which is in
+my opinion a great way to get hands-on experience with interacting with ZooKeeper!
