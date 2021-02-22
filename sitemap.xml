@@ -5,6 +5,7 @@
 <url> <loc>https://penncomputersystems.github.io/pages/about/</loc> <changefreq>daily</changefreq> <priority>0.7</priority> </url>
 <url> <loc>https://penncomputersystems.github.io/pages/contacts/</loc> <changefreq>daily</changefreq> <priority>0.7</priority> </url>
 <url> <loc>https://penncomputersystems.github.io/posts/raft-consensus</loc> <changefreq>daily</changefreq> <priority>0.7</priority> </url>
+<url> <loc>https://penncomputersystems.github.io/posts/zookeeper-coordination-kernel</loc> <changefreq>daily</changefreq> <priority>0.7</priority> </url>
 <url> <loc>https://penncomputersystems.github.io/tag/consensus-algorithms</loc> <changefreq>daily</changefreq> <priority>0.7</priority> </url>
 <url> <loc>https://penncomputersystems.github.io/tag/distributed-systems</loc> <changefreq>daily</changefreq> <priority>0.7</priority> </url>
 <url> <loc>https://penncomputersystems.github.io/category/distributed-systems</loc> <changefreq>daily</changefreq> <priority>0.7</priority> </url>

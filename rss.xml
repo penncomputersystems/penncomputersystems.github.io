@@ -1,4 +1,275 @@
-<?xml version="1.0" encoding="UTF-8"?><rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0"><channel><title><![CDATA[Blog by Penn Computer Systems]]></title><description><![CDATA[Penn Computer Systmes Blog]]></description><link>https://penncomputersystems.github.io</link><generator>GatsbyJS</generator><lastBuildDate>Thu, 04 Feb 2021 13:54:43 GMT</lastBuildDate><item><title><![CDATA[The RAFT Consensus Algorithm]]></title><description><![CDATA[The RAFT consensus protocol establishes a method for distributed consensus in a cluster of machines, by managing a replicated log. RAFT cleanly separates the key elements of consensus: leader election, failure recovery and safety and thus is a lot easier to understand than Paxos.]]></description><link>https://penncomputersystems.github.io/posts/raft-consensus</link><guid isPermaLink="false">https://penncomputersystems.github.io/posts/raft-consensus</guid><pubDate>Sun, 31 Jan 2021 00:00:00 GMT</pubDate><content:encoded>&lt;p&gt;Consensus algorithms hold a very important place in distributed systems design, allowing a cluster of machines to work as a coherent group with failure transparency (i.e. the end user does not know when individual machines in the cluster have failed as long as some are alive). The easiest application to visualize is a replicated key-value store, and we’ll use this to make the discussion on RAFT concrete. &lt;/p&gt;
+<?xml version="1.0" encoding="UTF-8"?><rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0"><channel><title><![CDATA[Blog by Penn Computer Systems]]></title><description><![CDATA[Penn Computer Systmes Blog]]></description><link>https://penncomputersystems.github.io</link><generator>GatsbyJS</generator><lastBuildDate>Mon, 22 Feb 2021 19:54:34 GMT</lastBuildDate><item><title><![CDATA[ZooKeeper: A Coordination Kernel]]></title><description><![CDATA[ZooKeeper is a coordination kernel that provides a simple API along with powerful guarantees that provides clients an easy way to build concurrency primitives for coordinating large-scale distributed processes.]]></description><link>https://penncomputersystems.github.io/posts/zookeeper-coordination-kernel</link><guid isPermaLink="false">https://penncomputersystems.github.io/posts/zookeeper-coordination-kernel</guid><pubDate>Thu, 18 Feb 2021 00:00:00 GMT</pubDate><content:encoded>&lt;p&gt;A key challenge commonly faced in distributed systems design has to do with
+process coordination. Many large scale systems require efficient ways to coordinate
+between servers, and there are variations on the purpose of coordination (e.g. node configuration,
+group membership etc.) each with different requirements. Thus, developing a service
+best suited for a particular application from scratch can be challenging and time consuming.&lt;/p&gt;
+&lt;p&gt;Introducing ZooKeeper, first described in a
+&lt;a href=&quot;https://www.usenix.org/legacy/event/atc10/tech/full_papers/Hunt.pdf&quot; target=&quot;_blank&quot; rel=&quot;nofollow noopener noreferrer&quot;&gt;paper&lt;/a&gt;
+published by Yahoo!, a service used for coordinating processes in distributed systems.
+Authors of ZooKeeper call it a &lt;em&gt;coordination kernel&lt;/em&gt; as it exposes an interface
+that allows clients to build coordination primitives (e.g. locks, condition variables)
+without changes to the underlying service, much like an operating system provides
+system calls for user-space processes. Contrast this with services that targets a specific use
+case, such as the Akamai Configuration Management System for node configuration, or
+the Amazon Simple Queue Service for queuing, ZooKeeper is much more flexible, which
+allows clients to build arbitrary primitives for specific use cases.&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;“Distributed systems are a zoo. They are chaotic and hard to manage, and ZooKeeper is meant to keep them
+under control.”&lt;/p&gt;
+&lt;div style=&quot;text-align: right&quot;&gt; - on the origin of the name &quot;ZooKeeper&quot; &lt;/div&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;One of the advantages of ZooKeeper is the emphasis on being “wait-free”, meaning that
+its implementation does not make use of blocking primitives, such as locks. This
+avoids common problems where slow/faulty clients become the bottleneck in the system.
+Yet surprisingly, this does not prevent the implementation of locks as we will see later on.
+That being said, in order to be an effective service for coordination, ZooKeeper
+must provide some reasonable guarantees.&lt;/p&gt;
+&lt;p&gt;In this article, we will discuss the basic ZooKeeper API and its semantics,
+the guarantees that come with ZooKeeper, some example implementations of common
+primitives, as well as discuss the underlying implementation of ZooKeeper itself.&lt;/p&gt;
+&lt;h1 id=&quot;the-zookeeper-service&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#the-zookeeper-service&quot; aria-label=&quot;the zookeeper service permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;The ZooKeeper Service&lt;/h1&gt;
+&lt;h2 id=&quot;the-abstraction&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#the-abstraction&quot; aria-label=&quot;the abstraction permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;The Abstraction&lt;/h2&gt;
+&lt;p&gt;The ZooKeeper service is usually composed of an ensemble of ZooKeeper servers.
+Clients of the service (which are processes that you want to coordinate) connect
+to the service by obtaining a session handle from a particular server, but the
+handle itself persist across ZooKeeper servers, which allow clients to transparently
+move from one server to another.&lt;/p&gt;
+&lt;p&gt;The abstraction that ZooKeeper provides is a set of data nodes, organized
+according to a hierarchical name space, which is a close analogue of
+files in a typical filesystem. Each data node is stored in-memory, and can
+contain arbitrary data, but is not designed for data storage, but more for
+coordination metadata.&lt;/p&gt;
+&lt;p&gt;&lt;span
+      class=&quot;gatsby-resp-image-wrapper&quot;
+      style=&quot;position: relative; display: block; margin-left: auto; margin-right: auto; max-width: 960px; &quot;
+    &gt;
+      &lt;a
+    class=&quot;gatsby-resp-image-link&quot;
+    href=&quot;/static/f8d78043f7a4587b6e8d7604f4d00c9b/33d1d/example-namespace.png&quot;
+    style=&quot;display: block&quot;
+    target=&quot;_blank&quot;
+    rel=&quot;noopener&quot;
+  &gt;
+    &lt;span
+    class=&quot;gatsby-resp-image-background-image&quot;
+    style=&quot;padding-bottom: 53.75%; position: relative; bottom: 0; left: 0; background-image: url(&apos;data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAALCAYAAAB/Ca1DAAAACXBIWXMAAAsTAAALEwEAmpwYAAABUElEQVQoz3VT266CQAzk/z/smBwfPCo37yaC+iCgIuAFndNZWWQhNmm26W6HzrRY+GKv10u5jmlFUaB8PIycPrVZX4Gq8/l8qnwSx/B9H7PpzHjXBrZMoE+sgbSFQQjbtjEaDlWnzTq+7QBW12gyyPMcSZIgTVM8hGqWZbjdbigkz9zpdOqws8z23/Fuu8V6tcZEKI6GI9zv947GQRDAdV2RYIrVconLJft0aOggfr1eEYYhPCmwx2Ocz2d1T2paiv1uJ/celouFgF0Ug46G+kwrAFLMxfkBxu231LVDuTmpzWYD13FQlqX64mI+V7l3R3s4tlMPhDXH47GzYgZlR8D6v30FxoH8DQZqskozAe799BAdDjX9KIqM9ak7pJGW73lKYALG8tj3fAXEYmpK8Fj2UQ+JNe3lrgFJM6v0IiDXg11yRQjIPJ2Umzva/lP+AXklVshW1h2DAAAAAElFTkSuQmCC&apos;); background-size: cover; display: block;&quot;
+  &gt;&lt;/span&gt;
+  &lt;picture&gt;
+          &lt;source
+              srcset=&quot;/static/f8d78043f7a4587b6e8d7604f4d00c9b/8ac56/example-namespace.webp 240w,
+/static/f8d78043f7a4587b6e8d7604f4d00c9b/d3be9/example-namespace.webp 480w,
+/static/f8d78043f7a4587b6e8d7604f4d00c9b/e46b2/example-namespace.webp 960w,
+/static/f8d78043f7a4587b6e8d7604f4d00c9b/7ed5b/example-namespace.webp 1150w&quot;
+              sizes=&quot;(max-width: 960px) 100vw, 960px&quot;
+              type=&quot;image/webp&quot;
+            /&gt;
+          &lt;source
+            srcset=&quot;/static/f8d78043f7a4587b6e8d7604f4d00c9b/8ff5a/example-namespace.png 240w,
+/static/f8d78043f7a4587b6e8d7604f4d00c9b/e85cb/example-namespace.png 480w,
+/static/f8d78043f7a4587b6e8d7604f4d00c9b/d9199/example-namespace.png 960w,
+/static/f8d78043f7a4587b6e8d7604f4d00c9b/33d1d/example-namespace.png 1150w&quot;
+            sizes=&quot;(max-width: 960px) 100vw, 960px&quot;
+            type=&quot;image/png&quot;
+          /&gt;
+          &lt;img
+            class=&quot;gatsby-resp-image-image&quot;
+            src=&quot;/static/f8d78043f7a4587b6e8d7604f4d00c9b/d9199/example-namespace.png&quot;
+            alt=&quot;Illustration of an example of ZooKeeper state&quot;
+            title=&quot;Illustration of an example of ZooKeeper state&quot;
+            loading=&quot;lazy&quot;
+            style=&quot;width:100%;height:100%;margin:0;vertical-align:middle;position:absolute;top:0;left:0;&quot;
+          /&gt;
+        &lt;/picture&gt;
+  &lt;/a&gt;
+    &lt;/span&gt;&lt;/p&gt;
+&lt;p&gt;In particular, there are two types of data nodes that can be created:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Regular&lt;/strong&gt;: Clients create and delete regular nodes explictly.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Ephemeral&lt;/strong&gt;: Clients create ephemeral nodes and can delete
+them explicitly, but the system can remove such nodes automatically
+when the session that created the node terminates.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Note that ephemeral nodes can be useful for implementing certain primitives that are
+dependent on whether specific nodes are connected (e.g. leader election,
+group membership).&lt;/p&gt;
+&lt;p&gt;Further, each data node can be created with the &lt;em&gt;sequential&lt;/em&gt; flag. Nodes
+created with the flag will have a monotonically increasing counter assigned
+and appended to its name. This can be useful for implementing primitives
+that require queuing.&lt;/p&gt;
+&lt;p&gt;Finally, ZooKeeper also provides a watching facility, much like
+subscription services/change streams, which allows clients to
+receive a notification of a change without polling. This can be useful
+for implementing primitives that require event waiting or callbacks.&lt;/p&gt;
+&lt;h2 id=&quot;client-api&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#client-api&quot; aria-label=&quot;client api permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Client API&lt;/h2&gt;
+&lt;p&gt;Clients of the ZooKeeper service issue requests through the client API. We present
+a basic subset of the API discussed in the paper, which we will use to build
+some primitives later on.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code class=&quot;language-text&quot;&gt;create(path, data, flags)&lt;/code&gt;: Creates a data node with path name &lt;code class=&quot;language-text&quot;&gt;path&lt;/code&gt;,
+stores &lt;code class=&quot;language-text&quot;&gt;data[]&lt;/code&gt; and returns the name of the data node. &lt;code class=&quot;language-text&quot;&gt;flags&lt;/code&gt; allow
+a client to select between regular and ephemeral data nodes, as well as make
+the data node sequential.&lt;/li&gt;
+&lt;li&gt;&lt;code class=&quot;language-text&quot;&gt;delete(path, version)&lt;/code&gt;: Deletes the data node at &lt;code class=&quot;language-text&quot;&gt;path&lt;/code&gt; if the version
+number matches the data node.&lt;/li&gt;
+&lt;li&gt;&lt;code class=&quot;language-text&quot;&gt;exists(path, watch)&lt;/code&gt;: Returns whether a data node at &lt;code class=&quot;language-text&quot;&gt;path&lt;/code&gt; exists. The
+&lt;code class=&quot;language-text&quot;&gt;watch&lt;/code&gt; flag enables the client to watch the data node for changes.&lt;/li&gt;
+&lt;li&gt;&lt;code class=&quot;language-text&quot;&gt;getData(path, watch)&lt;/code&gt;: Returns the data associated with the data node. The
+&lt;code class=&quot;language-text&quot;&gt;watch&lt;/code&gt; flag enables the client to watch the data node for changes.&lt;/li&gt;
+&lt;li&gt;&lt;code class=&quot;language-text&quot;&gt;setData(path, data, version)&lt;/code&gt;: Writes &lt;code class=&quot;language-text&quot;&gt;data[]&lt;/code&gt; to the data node at &lt;code class=&quot;language-text&quot;&gt;path&lt;/code&gt;
+if the version number matches the data node.&lt;/li&gt;
+&lt;li&gt;&lt;code class=&quot;language-text&quot;&gt;getChildren(path, watch)&lt;/code&gt;: Returns the set of children names of a data node.&lt;/li&gt;
+&lt;li&gt;&lt;code class=&quot;language-text&quot;&gt;sync(path)&lt;/code&gt;: Waits for all updates pending at the start of the operation
+to propagate to the server that the client is connected to.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;Note that these requests can be issued asynchronously. In particular, &lt;em&gt;multiple&lt;/em&gt;
+requests can be issued from the same client at a time.&lt;/p&gt;
+&lt;h2 id=&quot;zookeeper-guarantees&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#zookeeper-guarantees&quot; aria-label=&quot;zookeeper guarantees permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;ZooKeeper Guarantees&lt;/h2&gt;
+&lt;p&gt;A coordination kernel would be next to useless without reasonable guarantees about
+how it behaves when operations interleave. Thus, ZooKeeper provides the following
+guarantees.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Linearizable writes&lt;/strong&gt;: All requests that update the global state of the
+ZooKeeper ensemble are serializable and respect precedence. This means that the
+outcome of a set of possibly interleaving writes is equal to the outcome of
+those writes executing serially. Further, write requests are always processed in
+order.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;FIFO client order&lt;/strong&gt;: All requests from a given client are executed
+in the order that they were sent by the client.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Note that ZooKeeper was designed for read-heavy workloads (target read-to-write ratios
+range from 2:1 to 100:1), thus ZooKeeper does &lt;strong&gt;not&lt;/strong&gt; support linearizable reads!
+In other words, reads from a given server can be stale, meaning that updates
+that are committed to global state might not be visible. This is a
+conscious design decision and does not affect the correctness of the primitives
+we can build with ZooKeeper if done carefully. We will discuss why this occurs
+when we discuss the implementation details of the ZooKeeper service later on.&lt;/p&gt;
+&lt;h1 id=&quot;basic-coordination-primitives&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#basic-coordination-primitives&quot; aria-label=&quot;basic coordination primitives permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Basic Coordination Primitives&lt;/h1&gt;
+&lt;p&gt;Having seen the abstraction, client API and guarantees of ZooKeeper, let us
+put it in action and build a couple of simple coordination primitives with ZooKeeper,
+namely read-write locks and leader election.&lt;/p&gt;
+&lt;h2 id=&quot;readwrite-locks&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#readwrite-locks&quot; aria-label=&quot;readwrite locks permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Read/Write Locks&lt;/h2&gt;
+&lt;p&gt;A read-write lock is a locking primitive allows multiple readers to hold the lock
+&lt;strong&gt;or&lt;/strong&gt; exactly one writer to hold the lock at one point in time. To build such
+a primitive, we create a regular data node at path &lt;code class=&quot;language-text&quot;&gt;l&lt;/code&gt; to hold metadata for
+a particular lock. Then, for each client wishing to hold the lock for reading or
+writing, we line them up by creating a &lt;em&gt;sequential&lt;/em&gt; data node, and watch the
+data node ordered just in front of the newly created node for changes.
+The following pseudocode describes the logic in more detail.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Write Lock&lt;/strong&gt;&lt;/p&gt;
+&lt;div class=&quot;gatsby-highlight&quot; data-language=&quot;text&quot;&gt;&lt;pre class=&quot;language-text&quot;&gt;&lt;code class=&quot;language-text&quot;&gt;1 n = create(l + “/write-”, EPHEMERAL|SEQUENTIAL)
+2 C = getChildren(l, false)
+3 if n is lowest data node in C, exit
+4 p = data node in C ordered just before n
+5 if exists(p, true) wait for event
+6 goto 2&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;&lt;strong&gt;Read Lock&lt;/strong&gt;&lt;/p&gt;
+&lt;div class=&quot;gatsby-highlight&quot; data-language=&quot;text&quot;&gt;&lt;pre class=&quot;language-text&quot;&gt;&lt;code class=&quot;language-text&quot;&gt;1 n = create(l + “/read-”, EPHEMERAL|SEQUENTIAL)
+2 C = getChildren(l, false)
+3 if no write data nodes lower than n in C, exit
+4 p = write data node in C ordered just before n
+5 if exists(p, true) wait for event
+6 goto 3&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;&lt;strong&gt;Unlock&lt;/strong&gt;&lt;/p&gt;
+&lt;div class=&quot;gatsby-highlight&quot; data-language=&quot;text&quot;&gt;&lt;pre class=&quot;language-text&quot;&gt;&lt;code class=&quot;language-text&quot;&gt;1 delete(n)&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;A couple of interesting points to note:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;The &lt;em&gt;sequential&lt;/em&gt; flag came in useful to implement queuing for locks. Since reads
+can easily be stale, allowing the server to choose the concrete data node path
+prevents race conditions that typically happen due to the lack of atomicity
+of a read followed by a write.&lt;/li&gt;
+&lt;li&gt;The &lt;em&gt;ephemeral&lt;/em&gt; flag made sure that clients that disconnect due to a failure or
+without releasing the lock on exit will not hold the lock indefinitely.&lt;/li&gt;
+&lt;li&gt;The familiar loop to check whether a lock has been obtained by the client is
+important, since it is possible that the previous lock request in queue was abandoned
+(say by a disconnection) while an earlier client is still holding the lock.&lt;/li&gt;
+&lt;li&gt;The watch facility provided by ZooKeeper is a neat way to notify a client that
+they can attempt to obtain the lock without polling.&lt;/li&gt;
+&lt;li&gt;There is no &lt;a href=&quot;https://en.wikipedia.org/wiki/Thundering_herd_problem&quot; target=&quot;_blank&quot; rel=&quot;nofollow noopener noreferrer&quot;&gt;herd effect&lt;/a&gt;
+since exactly one client is woken up when a lock is released.&lt;/li&gt;
+&lt;li&gt;Even though ZooKeeper does not support linearizable reads, we can be confident that the list
+of children &lt;code class=&quot;language-text&quot;&gt;C&lt;/code&gt; obtained above does not miss any clients that came before, since it is preceded
+by a write operation.
+If the write operation resolves, the read operation that follows must be as recent
+as the state right after the write operation.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&quot;leader-election&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#leader-election&quot; aria-label=&quot;leader election permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Leader Election&lt;/h2&gt;
+&lt;p&gt;Leader elections are commonly used to coordinate between multiple processes
+in distributed systems, where a leader is “elected” to make decisions which
+“followers” obey. &lt;a href=&quot;https://penncomputersystems.github.io/posts/raft-consensus&quot; target=&quot;_blank&quot; rel=&quot;nofollow noopener noreferrer&quot;&gt;Raft&lt;/a&gt;
+makes use of leader elections for consistent log replication, and ZooKeeper
+itself follows a leader replication model, as we will see later.&lt;/p&gt;
+&lt;p&gt;To build such a primitive, we create a regular data node at path &lt;code class=&quot;language-text&quot;&gt;l&lt;/code&gt; to
+hold metadata for the elction. Then, we again create a &lt;em&gt;sequential&lt;/em&gt; node
+at &lt;code class=&quot;language-text&quot;&gt;l&lt;/code&gt;, and watch for changes of the preceding data node, and assume the role
+of leader if it ever gets deleted. The following pseudocode describes the
+idea more concretely.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Election&lt;/strong&gt;&lt;/p&gt;
+&lt;div class=&quot;gatsby-highlight&quot; data-language=&quot;text&quot;&gt;&lt;pre class=&quot;language-text&quot;&gt;&lt;code class=&quot;language-text&quot;&gt;1 n = create(l + &amp;quot;/n-&amp;quot;, EPHEMEREAL|SEQUENTIAL)
+2 C = getChildren(l, false)
+3 if n is lowest data node in C, assume leader, exit
+4 p = data node in C ordered just before n
+5 if exists(p, true) wait for event
+6 goto 2&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The underlying idea for implementing leader election is similar to how
+we implemented the read/write lock above. Can you spot how we avoided the
+herd effect? Which guarantees of ZooKeeper prevent two clients from thinking
+they are both the leaders?&lt;/p&gt;
+&lt;h1 id=&quot;zookeeper-implementation&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#zookeeper-implementation&quot; aria-label=&quot;zookeeper implementation permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;ZooKeeper Implementation&lt;/h1&gt;
+&lt;p&gt;Finally, we discuss some of the interesting aspects of the implementation of
+ZooKeeper itself, namely how it provides its guarantees, and how it is optimized
+for real-world throughputs.&lt;/p&gt;
+&lt;h2 id=&quot;replicated-databases&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#replicated-databases&quot; aria-label=&quot;replicated databases permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Replicated Databases&lt;/h2&gt;
+&lt;p&gt;As discussed, a ZooKeeper service is usually composed of multiple servers
+working as an ensemble. This allows ZooKeeper to provide high availability
+by replicating the data nodes on each server. In order to maintain consistency
+between servers, ZooKeeper opts for a common strategy for horizontal scaling,
+namely leader replication. More specifically, a server is selected as the
+&lt;em&gt;leader&lt;/em&gt; and the other servers are &lt;em&gt;followers&lt;/em&gt;. Further, writes are always
+routed through the reader and commits when there is a quorum. Note
+that reads on the other hand can be served by a local replica which may be
+out-of-date and stale (which is why ZooKeeper does not support linearizable reads),
+but this allows for higher read throughput.&lt;/p&gt;
+&lt;h2 id=&quot;zab-an-atomic-broadcast-protocol&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#zab-an-atomic-broadcast-protocol&quot; aria-label=&quot;zab an atomic broadcast protocol permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Zab: An Atomic Broadcast Protocol&lt;/h2&gt;
+&lt;p&gt;ZooKeeper makes use of &lt;em&gt;Zab&lt;/em&gt;, an atomic broadcast protocol to provide
+the strong guarantees as described previously. At a high level, Zab
+makes use of a majority quorum to commit a proposal to a state change,
+and guarantees that changes are delivered in order that they were sent
+and are atomic. ZooKeeper also makes use of &lt;em&gt;Zab&lt;/em&gt; for fault tolerance,
+and uses the protocol to deliver “catch-up” messages since the last
+snapshot in the event of a server failure.&lt;/p&gt;
+&lt;p&gt;An important point about Zab is that each state change is recorded
+in an &lt;em&gt;idempotent&lt;/em&gt; transaction. In other words, applying a particular
+transaction multiple times will not affect the final state of the system.
+Note that this often requires the leader to execute client requests locally
+before proposing a change. For instance, an operation to increment the value
+of the data node at &lt;code class=&quot;language-text&quot;&gt;path&lt;/code&gt; has to be converted to setting the value of the
+data node to some value to preserve idempotency.&lt;/p&gt;
+&lt;p&gt;For more details and theoretical proofs of correctness of &lt;em&gt;Zab&lt;/em&gt;, check out
+the paper &lt;a href=&quot;https://marcoserafini.github.io/papers/zab.pdf&quot; target=&quot;_blank&quot; rel=&quot;nofollow noopener noreferrer&quot;&gt;here&lt;/a&gt;.&lt;/p&gt;
+&lt;h2 id=&quot;fuzzy-snapshots&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#fuzzy-snapshots&quot; aria-label=&quot;fuzzy snapshots permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Fuzzy Snapshots&lt;/h2&gt;
+&lt;p&gt;Since the data nodes are stored in-memory, each replica has to take snapshots
+periodically as replaying all transactions from the leader would potentially
+be too time consuming. Recall that ZooKeeper is &lt;em&gt;wait-free&lt;/em&gt;, so the snapshots
+are &lt;em&gt;fuzzy snapshots&lt;/em&gt;, since the implementation does not take a lock on the
+state of a particular replica. Interestingly, a resulting snapshot may not correspond
+to the state of ZooKeeper at any point in time (can you think of a series of
+transactions and snapshot procedure that results in this behavior?). But,
+since transactions are idempotent, a replica can easily apply them as long as
+the transactions are stored in the correct order.&lt;/p&gt;
+&lt;h1 id=&quot;summary&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#summary&quot; aria-label=&quot;summary permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Summary&lt;/h1&gt;
+&lt;p&gt;ZooKeeper was initially developed at Yahoo! and used for a variety of Yahoo!
+services such as the search engine crawler and their distributed pub-sub system,
+but has seen many more use cases ever since. For instance, the Apache Software
+Foundation has developed &lt;a href=&quot;https://zookeeper.apache.org/&quot; target=&quot;_blank&quot; rel=&quot;nofollow noopener noreferrer&quot;&gt;Apache ZooKeeper&lt;/a&gt;
+as an open-source version of ZooKeeper and is widely used for many production
+applications including Apache Hadoop and Kafka as well as companies including
+Yelp, Reddit, Facebook, Twitter etc. Its simple interface, reasonable
+consistency guarantees, and flexible abstractions provides the user with the
+ability to tailor specific primitives that fit the requirements of a particular system.&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;P.S.&lt;/em&gt; Personally, I first heard about ZooKeeper from an interesting
+&lt;a href=&quot;https://www.youtube.com/watch?v=mMuk8Rn9HBg&quot; target=&quot;_blank&quot; rel=&quot;nofollow noopener noreferrer&quot;&gt;Youtube video&lt;/a&gt; from one of my favorite programming channels
+on building an asynchronous ZooKeeper client in Rust, which is in
+my opinion a great way to get hands-on experience with interacting with ZooKeeper!&lt;/p&gt;</content:encoded></item><item><title><![CDATA[The RAFT Consensus Algorithm]]></title><description><![CDATA[The RAFT consensus protocol establishes a method for distributed consensus in a cluster of machines, by managing a replicated log. RAFT cleanly separates the key elements of consensus: leader election, failure recovery and safety and thus is a lot easier to understand than Paxos.]]></description><link>https://penncomputersystems.github.io/posts/raft-consensus</link><guid isPermaLink="false">https://penncomputersystems.github.io/posts/raft-consensus</guid><pubDate>Sun, 31 Jan 2021 00:00:00 GMT</pubDate><content:encoded>&lt;p&gt;Consensus algorithms hold a very important place in distributed systems design, allowing a cluster of machines to work as a coherent group with failure transparency (i.e. the end user does not know when individual machines in the cluster have failed as long as some are alive). The easiest application to visualize is a replicated key-value store, and we’ll use this to make the discussion on RAFT concrete. &lt;/p&gt;
 &lt;p&gt;RAFT is an algorithm that allows a cluster of machines to act as a &lt;a href=&quot;https://en.wikipedia.org/wiki/State_machine_replication&quot; target=&quot;_blank&quot; rel=&quot;nofollow noopener noreferrer&quot;&gt;replicated state machine&lt;/a&gt; which essentially means that each machine has identical state and changes to that state are carried out in the same order on all the machines. The state for a key-value store will be the key-value pairs, and a replicated state machine means that all the writes(creation and deletion) occur in the same order. This is very useful, because if one of the machines goes down, we have a bunch of other machines with identical state. RAFT does this by managing a replicated log of operations. So in the case of the key-value store, it would look something like:&lt;/p&gt;
 &lt;div class=&quot;gatsby-highlight&quot; data-language=&quot;text&quot;&gt;&lt;pre class=&quot;language-text&quot;&gt;&lt;code class=&quot;language-text&quot;&gt;PUT key:ComputerSystems value:Article1
 PUT key:ComputerSystems value:Article2
